@@ -1,18 +1,26 @@
 use axum::Router;
 use tokio::net::TcpListener;
+use std::env;
+
+mod db;
 
 #[tokio::main]
 async fn main() {
     
     dotenvy::dotenv().ok();
 
-    let app = Router::new();
+    let addr = env::var("ADDRESS").expect("Server address not set in .env file!");
 
-    let listener = TcpListener::bind("127.0.0.1:3000")
+    let pool = db::create_pool().await;
+
+    let app = Router::new().with_state(pool);
+
+    let listener = TcpListener::bind(addr)
         .await
         .unwrap();
 
-    println!("Server running on http://127.0.0.1:3000");
+    
+    println!("Server running!");
 
     axum::serve(listener, app)
         .await
