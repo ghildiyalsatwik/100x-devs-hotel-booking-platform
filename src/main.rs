@@ -1,8 +1,10 @@
-use axum::Router;
 use tokio::net::TcpListener;
 use std::env;
 
 mod db;
+mod handlers;
+mod models;
+mod routes;
 
 #[tokio::main]
 async fn main() {
@@ -13,12 +15,11 @@ async fn main() {
 
     let pool = db::create_pool().await;
 
-    let app = Router::new().with_state(pool);
+    let app = routes::create_routes(pool);
 
     let listener = TcpListener::bind(addr)
         .await
         .unwrap();
-
     
     println!("Server running!");
 
