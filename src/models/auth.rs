@@ -17,3 +17,23 @@ pub struct SignupResponse {
     pub role: String,
     pub phone: Option<String>,
 }
+
+#[derive(Deserialize)]
+pub struct LoginRequest {
+    pub email: Option<String>,
+    pub password: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct LoginUser {
+    pub id: String,
+    pub name: String,
+    pub email: String,
+    pub role: String,
+}
+
+#[derive(Serialize)]
+pub struct LoginResponse {
+    pub token: String,
+    pub user: LoginUser,
+}
