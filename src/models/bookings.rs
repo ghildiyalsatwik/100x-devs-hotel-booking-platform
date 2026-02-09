@@ -42,3 +42,10 @@ pub struct BookingListResponse {
     pub status: String,
     pub bookingDate: String,
 }
+
+#[derive(Serialize)]
+pub struct CancelBookingResponse {
+    pub id: String,
+    pub status: String,
+    pub cancelledAt: String,
+}

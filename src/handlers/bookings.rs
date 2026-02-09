@@ -1,5 +1,5 @@
-use axum::{extract::{State, Query}, http::StatusCode, Json};
-use chrono::{NaiveDate, Utc};
+use axum::{extract::{State, Query, Path}, http::StatusCode, Json};
+use chrono::{NaiveDate, Utc, Duration};
 use sqlx::PgPool;
 use uuid::Uuid;
 use sqlx::types::BigDecimal;
@@ -7,7 +7,8 @@ use sqlx::types::BigDecimal;
 use crate::{
     handlers::auth_middleware::AuthUser,
     models::{
-        bookings::{CreateBookingRequest, BookingResponse, BookingListQuery, BookingListResponse},
+        bookings::{CreateBookingRequest, BookingResponse, BookingListQuery, BookingListResponse,
+        CancelBookingResponse},
         response::ApiResponse,
     },
 };
@@ -257,4 +258,121 @@ pub async fn list_bookings(
         StatusCode::OK,
         Json(ApiResponse::success(response)),
     )
+}
+
+pub async fn cancel_booking(
+    auth: AuthUser,
+    State(pool): State<PgPool>,
+    Path(booking_id): Path<String>,
+) -> (StatusCode, Json<ApiResponse<CancelBookingResponse>>) {
+
+    
+    if auth.role != "customer" {
+        return forbidden_();
+    }
+
+    let booking_id = match Uuid::parse_str(&booking_id) {
+        Ok(v) => v,
+        Err(_) => return invalid_request_(),
+    };
+
+    let mut tx = pool.begin().await.unwrap();
+
+    
+    let booking = sqlx::query!(
+        r#"
+        SELECT
+            id,
+            user_id,
+            status,
+            check_in_date,
+            cancelled_at
+        FROM bookings
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+        booking_id
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .unwrap();
+
+    let booking = match booking {
+        Some(b) => b,
+        None => {
+            tx.rollback().await.unwrap();
+            return booking_not_found();
+        }
+    };
+
+    
+    if booking.user_id != auth.user_id {
+        tx.rollback().await.unwrap();
+        return forbidden_();
+    }
+
+
+    if booking.status == Some("cancelled".to_string()) {
+        tx.rollback().await.unwrap();
+        return already_cancelled();
+    }
+
+    let now = Utc::now().date_naive();
+    
+    let days_until_checkin = booking.check_in_date - now;
+
+    if days_until_checkin < Duration::days(1) {
+        tx.rollback().await.unwrap();
+        return cancellation_deadline_passed();
+    }
+
+    let cancelled_at = Utc::now().naive_utc();
+
+    sqlx::query!(
+        r#"
+        UPDATE bookings
+        SET
+            status = 'cancelled',
+            cancelled_at = $1
+        WHERE id = $2
+        "#,
+        cancelled_at,
+        booking_id
+    )
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+
+    tx.commit().await.unwrap();
+
+    let response = CancelBookingResponse {
+        id: booking_id.to_string(),
+        status: "cancelled".to_string(),
+        cancelledAt: cancelled_at.and_utc().to_rfc3339(),
+    };
+
+    (
+        StatusCode::OK,
+        Json(ApiResponse::success(response)),
+    )
+}
+
+fn invalid_request_() -> (StatusCode, Json<ApiResponse<CancelBookingResponse>>) {
+    (StatusCode::BAD_REQUEST, Json(ApiResponse::error("INVALID_REQUEST")))
+}
+
+fn booking_not_found() -> (StatusCode, Json<ApiResponse<CancelBookingResponse>>) {
+    (StatusCode::NOT_FOUND, Json(ApiResponse::error("BOOKING_NOT_FOUND")))
+}
+
+fn already_cancelled() -> (StatusCode, Json<ApiResponse<CancelBookingResponse>>) {
+    (StatusCode::BAD_REQUEST, Json(ApiResponse::error("ALREADY_CANCELLED")))
+}
+
+fn cancellation_deadline_passed() -> (StatusCode, Json<ApiResponse<CancelBookingResponse>>) {
+    (StatusCode::BAD_REQUEST, Json(ApiResponse::error("CANCELLATION_DEADLINE_PASSED")))
+}
+
+fn forbidden_() -> (StatusCode, Json<ApiResponse<CancelBookingResponse>>) {
+    (StatusCode::FORBIDDEN, Json(ApiResponse::error("FORBIDDEN")))
 }
