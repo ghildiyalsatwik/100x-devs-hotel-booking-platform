@@ -1,4 +1,4 @@
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::{State, Query}, http::StatusCode, Json};
 use chrono::{NaiveDate, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -7,7 +7,7 @@ use sqlx::types::BigDecimal;
 use crate::{
     handlers::auth_middleware::AuthUser,
     models::{
-        bookings::{CreateBookingRequest, BookingResponse},
+        bookings::{CreateBookingRequest, BookingResponse, BookingListQuery, BookingListResponse},
         response::ApiResponse,
     },
 };
@@ -187,4 +187,74 @@ fn room_not_found() -> (StatusCode, Json<ApiResponse<BookingResponse>>) {
 
 fn forbidden() -> (StatusCode, Json<ApiResponse<BookingResponse>>) {
     (StatusCode::FORBIDDEN, Json(ApiResponse::error("FORBIDDEN")))
+}
+
+
+pub async fn list_bookings(
+    auth: AuthUser,
+    State(pool): State<PgPool>,
+    Query(filters): Query<BookingListQuery>,
+) -> (StatusCode, Json<ApiResponse<Vec<BookingListResponse>>>) {
+
+    if auth.role != "customer" {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(ApiResponse::error("FORBIDDEN")),
+        );
+    }
+
+    let bookings = sqlx::query!(
+        r#"
+        SELECT
+            b.id,
+            b.room_id,
+            b.hotel_id,
+            h.name AS hotel_name,
+            r.room_number,
+            r.room_type,
+            b.check_in_date,
+            b.check_out_date,
+            b.guests,
+            b.total_price,
+            b.status,
+            b.booking_date
+        FROM bookings b
+        JOIN rooms r ON r.id = b.room_id
+        JOIN hotels h ON h.id = b.hotel_id
+        WHERE
+            b.user_id = $1
+        AND ($2::text IS NULL OR b.status = $2)
+        ORDER BY b.booking_date DESC
+        "#,
+        auth.user_id,
+        filters.status,
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+
+    let response = bookings
+        .into_iter()
+        .map(|b| BookingListResponse {
+            id: b.id.to_string(),
+            roomId: b.room_id.to_string(),
+            hotelId: b.hotel_id.to_string(),
+            hotelName: b.hotel_name,
+            roomNumber: b.room_number,
+            roomType: b.room_type,
+            checkInDate: b.check_in_date.to_string(),
+            checkOutDate: b.check_out_date.to_string(),
+            guests: b.guests,
+            totalPrice: b.total_price.to_string(),
+            status: b.status.unwrap_or_else(|| "confirmed".to_string()),
+            bookingDate: b.booking_date
+            .map(|d| d.and_utc().to_rfc3339())
+            .unwrap_or_else(|| Utc::now().to_rfc3339()),
+        })
+        .collect();
+
+    (
+        StatusCode::OK,
+        Json(ApiResponse::success(response)),
+    )
 }
