@@ -1,4 +1,4 @@
-use axum::{extract::{State, Query}, http::StatusCode, Json};
+use axum::{extract::{State, Query, Path}, http::StatusCode, Json};
 use bigdecimal::ToPrimitive;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -8,7 +8,8 @@ use sqlx::types::BigDecimal;
 use crate::{
     handlers::auth_middleware::AuthUser,
     models::{
-        hotels::{CreateHotelRequest, HotelResponse, HotelSearchQuery, HotelListResponse},
+        hotels::{CreateHotelRequest, HotelResponse, HotelSearchQuery, HotelListResponse,
+                HotelDetailResponse, HotelRoomResponse},
         response::ApiResponse,
     },
 };
@@ -155,6 +156,93 @@ pub async fn list_hotels(
             .unwrap_or_else(|| "0".to_string()),
     })
     .collect();
+
+    (
+        StatusCode::OK,
+        Json(ApiResponse::success(response)),
+    )
+}
+
+pub async fn get_hotel_by_id(
+    _auth: AuthUser,
+    State(pool): State<PgPool>,
+    Path(hotel_id): Path<Uuid>,
+) -> (StatusCode, Json<ApiResponse<HotelDetailResponse>>) {
+    
+    let hotel = sqlx::query!(
+        r#"
+        SELECT
+            id,
+            owner_id,
+            name,
+            description,
+            city,
+            country,
+            amenities,
+            rating,
+            total_reviews
+        FROM hotels
+        WHERE id = $1
+        "#,
+        hotel_id
+    )
+    .fetch_optional(&pool)
+    .await
+    .unwrap();
+
+    let hotel = match hotel {
+        Some(h) => h,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ApiResponse::error("HOTEL_NOT_FOUND")),
+            )
+        }
+    };
+
+    
+    let rooms = sqlx::query!(
+        r#"
+        SELECT
+            id,
+            room_number,
+            room_type,
+            price_per_night,
+            max_occupancy
+        FROM rooms
+        WHERE hotel_id = $1
+        ORDER BY room_number
+        "#,
+        hotel_id
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+
+    let rooms = rooms
+        .into_iter()
+        .map(|r| HotelRoomResponse {
+            id: r.id.to_string(),
+            roomNumber: r.room_number,
+            roomType: r.room_type,
+            pricePerNight: r.price_per_night.to_string(),
+            maxOccupancy: r.max_occupancy,
+        })
+        .collect();
+
+    
+    let response = HotelDetailResponse {
+        id: hotel.id.to_string(),
+        ownerId: hotel.owner_id.to_string(),
+        name: hotel.name,
+        description: hotel.description,
+        city: hotel.city,
+        country: hotel.country,
+        amenities: hotel.amenities.unwrap_or_default(),
+        rating: hotel.rating.and_then(|r| r.to_f64()).unwrap_or(0.0),
+        totalReviews: hotel.total_reviews.unwrap_or(0),
+        rooms,
+    };
 
     (
         StatusCode::OK,

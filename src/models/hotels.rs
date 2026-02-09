@@ -43,3 +43,26 @@ pub struct HotelListResponse {
     pub totalReviews: i32,
     pub minPricePerNight: String,
 }
+
+#[derive(Serialize)]
+pub struct HotelDetailResponse {
+    pub id: String,
+    pub ownerId: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub city: String,
+    pub country: String,
+    pub amenities: Vec<String>,
+    pub rating: f64,
+    pub totalReviews: i32,
+    pub rooms: Vec<HotelRoomResponse>,
+}
+
+#[derive(Serialize)]
+pub struct HotelRoomResponse {
+    pub id: String,
+    pub roomNumber: String,
+    pub roomType: String,
+    pub pricePerNight: String,
+    pub maxOccupancy: i32,
+}
