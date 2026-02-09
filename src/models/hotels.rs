@@ -21,3 +21,25 @@ pub struct HotelResponse {
     pub rating: f64,
     pub totalReviews: i32,
 }
+
+#[derive(Deserialize)]
+pub struct HotelSearchQuery {
+    pub city: Option<String>,
+    pub country: Option<String>,
+    pub minPrice: Option<String>,
+    pub maxPrice: Option<String>,
+    pub minRating: Option<f64>,
+}
+
+#[derive(Serialize)]
+pub struct HotelListResponse {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub city: String,
+    pub country: String,
+    pub amenities: Vec<String>,
+    pub rating: f64,
+    pub totalReviews: i32,
+    pub minPricePerNight: String,
+}
