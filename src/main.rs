@@ -1,3 +1,4 @@
+use axum::{Router, routing::get};
 use tokio::net::TcpListener;
 use std::env;
 
@@ -16,7 +17,9 @@ async fn main() {
 
     let pool = db::create_pool().await;
 
-    let app = routes::create_routes(pool);
+    let app = Router::new()
+        .route("/ping", get(|| async { "pong" }))
+        .merge(crate::routes::create_routes(pool));
 
     let listener = TcpListener::bind(addr)
         .await
